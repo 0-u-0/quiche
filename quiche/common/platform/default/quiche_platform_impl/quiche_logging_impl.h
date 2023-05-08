@@ -51,10 +51,27 @@ private:
 
 class QUICHE_EXPORT MyLog {
 public:
-  MyLog(const char *file_name, int line, const char *function_name)
-      : file_name_(file_name), line_(line), function_name_(function_name) {}
+  MyLog(const char *file_name, int line, const char *function_name,
+        int level = 0)
+      : file_name_(file_name), line_(line), function_name_(function_name),
+        level_(level) {}
   ~MyLog() {
-    std::cout << "Log(" << file_name_ << ":" << line_ << "): " << str()
+    std::string p1("\x1B[34mLog(");
+    if (level_ == 1) {
+      p1 = "\x1B[34mVLog(";
+    }else if(level_ == 2) {
+      p1 = "\x1B[36mDLog(";
+    }else if(level_ == 3) {
+      p1 = "\x1B[32mILog(";
+    }else if(level_ == 4) {
+      p1 = "\x1B[33mWLog(";
+    }else if(level_ == 5) {
+      p1 = "\x1B[91mELog(";
+    }else if(level_ == 6) {
+      p1 = "\x1B[35mFLog(";
+    }
+
+    std::cout << p1 << file_name_ << ":" << line_ << "): \x1B[39m" << str()
               << std::endl;
   }
 
@@ -72,6 +89,7 @@ private:
   const char *file_name_;
   int line_;
   const char *function_name_;
+  int level_;
 };
 
 // We need to actually implement LOG(FATAL), otherwise some functions will fail
@@ -102,6 +120,14 @@ private:
 
 } // namespace quiche
 
+static const int VERBOSE = 1;
+static const int DEBUG = 2;
+static const int INFO = 3;
+static const int WARNING = 4;
+static const int ERROR = 5;
+static const int FATAL = 6;
+static const int DFATAL = 6;
+
 // This is necessary because we sometimes call QUICHE_DCHECK inside constexpr
 // functions, and then write non-constexpr expressions into the resulting log.
 #define QUICHE_CONDITIONAL_LOG_STREAM(stream, condition)                       \
@@ -113,19 +139,25 @@ private:
 #define QUICHE_NOOP_STREAM_WITH_CONDITION(condition)                           \
   QUICHE_DISREGARD_LOG_STREAM(::quiche::NoopLogSink(condition).stream())
 
-#define QUICHE_DVLOG_IMPL(verbose_level) ::quiche::MyLog(__FILE__, __LINE__, __func__).stream()
+#define QUICHE_DVLOG_IMPL(verbose_level)                                       \
+  ::quiche::MyLog(__FILE__, __LINE__, __func__, 2).stream()
 #define QUICHE_DVLOG_IF_IMPL(verbose_level, condition)                         \
   QUICHE_NOOP_STREAM_WITH_CONDITION(condition)
-#define QUICHE_DLOG_IMPL(severity) ::quiche::MyLog(__FILE__, __LINE__, __func__).stream()
-#define QUICHE_VLOG_IMPL(verbose_level) ::quiche::MyLog(__FILE__, __LINE__, __func__).stream()
+#define QUICHE_DLOG_IMPL(severity)                                             \
+  ::quiche::MyLog(__FILE__, __LINE__, __func__, severity).stream()
+#define QUICHE_VLOG_IMPL(verbose_level)                                        \
+  ::quiche::MyLog(__FILE__, __LINE__, __func__, 1).stream()
 #define QUICHE_LOG_FIRST_N_IMPL(severity, n) QUICHE_NOOP_STREAM()
 #define QUICHE_LOG_EVERY_N_SEC_IMPL(severity, seconds) QUICHE_NOOP_STREAM()
 
 #define QUICHE_LOG_IMPL(severity) QUICHE_LOG_IMPL_##severity()
 #define QUICHE_LOG_IMPL_FATAL() ::quiche::FatalLogSink().stream()
-#define QUICHE_LOG_IMPL_ERROR() ::quiche::MyLog(__FILE__, __LINE__, __func__).stream()
-#define QUICHE_LOG_IMPL_WARNING() ::quiche::MyLog(__FILE__, __LINE__, __func__).stream()
-#define QUICHE_LOG_IMPL_INFO() ::quiche::MyLog(__FILE__, __LINE__, __func__).stream()
+#define QUICHE_LOG_IMPL_ERROR()                                                \
+  ::quiche::MyLog(__FILE__, __LINE__, __func__, 5).stream()
+#define QUICHE_LOG_IMPL_WARNING()                                              \
+  ::quiche::MyLog(__FILE__, __LINE__, __func__, 4).stream()
+#define QUICHE_LOG_IMPL_INFO()                                                 \
+  ::quiche::MyLog(__FILE__, __LINE__, __func__, 3).stream()
 
 #define QUICHE_LOG_IF_IMPL(severity, condition)                                \
   QUICHE_CONDITIONAL_LOG_STREAM(QUICHE_LOG_IMPL_##severity(), condition)
