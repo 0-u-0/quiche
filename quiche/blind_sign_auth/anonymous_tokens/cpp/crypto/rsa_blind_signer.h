@@ -24,6 +24,10 @@
 #include "quiche/blind_sign_auth/anonymous_tokens/cpp/crypto/crypto_utils.h"
 #include "quiche/blind_sign_auth/anonymous_tokens/proto/anonymous_tokens.pb.h"
 #include "quiche/common/platform/api/quiche_export.h"
+// copybara:strip_begin(internal comment)
+// The QUICHE_EXPORT annotation is necessary for some classes and functions
+// to link correctly on Windows. Please do not remove them!
+// copybara:strip_end
 
 namespace private_membership {
 namespace anonymous_tokens {
@@ -60,7 +64,7 @@ class QUICHE_EXPORT RsaBlindSigner : public BlindSigner {
 
   absl::StatusOr<std::string> SignInternal(absl::string_view input) const;
 
-  const std::optional<absl::string_view> public_metadata_;
+  const std::optional<std::string> public_metadata_;
 
   // We only keep these for the case when we use RSA blind signatures with
   // public metadata. Specifically augmented_rsa_e_ and augmented_rsa_d_ is

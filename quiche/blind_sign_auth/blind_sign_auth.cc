@@ -4,7 +4,6 @@
 
 #include "quiche/blind_sign_auth/blind_sign_auth.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <functional>
 #include <string>
@@ -24,6 +23,7 @@
 #include "quiche/blind_sign_auth/anonymous_tokens/proto/anonymous_tokens.pb.h"
 #include "quiche/blind_sign_auth/blind_sign_http_response.h"
 #include "quiche/common/platform/api/quiche_logging.h"
+#include "quiche/common/quiche_endian.h"
 #include "quiche/common/quiche_random.h"
 
 namespace quiche {
@@ -45,7 +45,7 @@ void BlindSignAuth::GetTokens(
   request.set_use_attestation(false);
   request.set_service_type("chromeipblinding");
   request.set_location_granularity(
-      privacy::ppn::GetInitialDataRequest_LocationGranularity_UNKNOWN);
+      privacy::ppn::GetInitialDataRequest_LocationGranularity_CITY_GEOS);
 
   // Call GetInitialData on the HttpFetcher.
   std::string path_and_query = "/v1/getInitialData";
@@ -117,7 +117,11 @@ void BlindSignAuth::GetInitialDataCallback(
       callback(fingerprint_status);
       return;
     }
-    plaintext_message.set_public_metadata(absl::StrCat(fingerprint));
+    uint64_t fingerprint_big_endian = QuicheEndian::HostToNet64(fingerprint);
+    std::string key;
+    key.resize(sizeof(fingerprint_big_endian));
+    memcpy(key.data(), &fingerprint_big_endian, sizeof(fingerprint_big_endian));
+    plaintext_message.set_public_metadata(key);
     plaintext_tokens.push_back(plaintext_message);
   }
 
@@ -244,7 +248,8 @@ void BlindSignAuth::AuthAndSignCallback(
   std::vector<std::string> tokens_vec;
   for (size_t i = 0; i < signed_tokens->size(); i++) {
     privacy::ppn::SpendTokenData spend_token_data;
-    *spend_token_data.mutable_public_metadata() = public_metadata_info;
+    *spend_token_data.mutable_public_metadata() =
+        public_metadata_info.public_metadata();
     *spend_token_data.mutable_unblinded_token() =
         signed_tokens->at(i).input().plaintext_message();
     *spend_token_data.mutable_unblinded_token_signature() =
@@ -276,13 +281,17 @@ absl::Status BlindSignAuth::FingerprintPublicMetadata(
   uint32_t digest_length = 0;
   // Concatenate fields in tag number order, omitting fields whose values match
   // the default. This enables new fields to be added without changing the
-  // resulting encoding.
-  const std::string input = absl::StrCat(            //
-      metadata.exit_location().country(),            //
-      metadata.exit_location().city_geo_id(),        //
-      metadata.service_type(),                       //
-      OmitDefault(metadata.expiration().seconds()),  //
-      OmitDefault(metadata.expiration().nanos()));
+  // resulting encoding. The signer needs to ensure that | is not allowed in any
+  // metadata value so intentional collisions cannot be created.
+  const std::vector<std::string> parts = {
+      metadata.exit_location().country(),
+      metadata.exit_location().city_geo_id(),
+      metadata.service_type(),
+      OmitDefault(metadata.expiration().seconds()),
+      OmitDefault(metadata.expiration().nanos()),
+      OmitDefault(metadata.debug_mode()),
+  };
+  const std::string input = absl::StrJoin(parts, "|");
   if (EVP_Digest(input.data(), input.length(),
                  reinterpret_cast<uint8_t*>(&digest[0]), &digest_length, hasher,
                  nullptr) != 1) {

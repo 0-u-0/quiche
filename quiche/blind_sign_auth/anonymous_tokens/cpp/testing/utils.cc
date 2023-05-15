@@ -17,6 +17,7 @@
 #include <stdint.h>
 
 #include <fstream>
+#include <ios>
 #include <memory>
 #include <random>
 #include <sstream>
@@ -43,21 +44,22 @@ namespace anonymous_tokens {
 namespace {
 
 absl::StatusOr<std::string> ReadFileToString(absl::string_view path) {
-  std::ifstream file((std::string(path)));
+  std::ifstream file(std::string(path), std::ios::binary);
   if (!file.is_open()) {
     return absl::InternalError("Reading file failed.");
   }
-  std::ostringstream ss;
+  std::ostringstream ss(std::ios::binary);
   ss << file.rdbuf();
   return ss.str();
 }
 
 absl::StatusOr<std::pair<RSAPublicKey, RSAPrivateKey>> ParseRsaKeysFromFile(
     absl::string_view path) {
-  ANON_TOKENS_ASSIGN_OR_RETURN(std::string text_proto, ReadFileToString(path));
+  ANON_TOKENS_ASSIGN_OR_RETURN(std::string binary_proto,
+                               ReadFileToString(path));
   RSAPrivateKey private_key;
-  if (!private_key.ParseFromString(text_proto)) {
-    return absl::InternalError("Parsing text proto failed.");
+  if (!private_key.ParseFromString(binary_proto)) {
+    return absl::InternalError("Parsing binary proto failed.");
   }
   RSAPublicKey public_key;
   public_key.set_n(private_key.n());
@@ -350,7 +352,7 @@ absl::StatusOr<std::pair<RSAPublicKey, RSAPrivateKey>> GetStandardRsaKeyPair(
 
 absl::StatusOr<std::pair<RSAPublicKey, RSAPrivateKey>> GetStrongRsaKeys2048() {
   std::string path = absl::StrCat(quiche::test::QuicheGetCommonSourcePath(),
-                                  "/anonymous_tokens/testing/data/strong_rsa_modulus2048_example.binarypb");
+                                  "/anonymous_tokens/testdata/strong_rsa_modulus2048_example.binarypb");
   ANON_TOKENS_ASSIGN_OR_RETURN(auto key_pair, ParseRsaKeysFromFile(path));
   return std::make_pair(std::move(key_pair.first), std::move(key_pair.second));
 }
@@ -358,21 +360,21 @@ absl::StatusOr<std::pair<RSAPublicKey, RSAPrivateKey>> GetStrongRsaKeys2048() {
 absl::StatusOr<std::pair<RSAPublicKey, RSAPrivateKey>>
 GetAnotherStrongRsaKeys2048() {
   std::string path = absl::StrCat(quiche::test::QuicheGetCommonSourcePath(),
-                                  "/anonymous_tokens/testing/data/strong_rsa_modulus2048_example_2.binarypb");
+                                  "/anonymous_tokens/testdata/strong_rsa_modulus2048_example_2.binarypb");
   ANON_TOKENS_ASSIGN_OR_RETURN(auto key_pair, ParseRsaKeysFromFile(path));
   return std::make_pair(std::move(key_pair.first), std::move(key_pair.second));
 }
 
 absl::StatusOr<std::pair<RSAPublicKey, RSAPrivateKey>> GetStrongRsaKeys3072() {
   std::string path = absl::StrCat(quiche::test::QuicheGetCommonSourcePath(),
-                                  "/anonymous_tokens/testing/data/strong_rsa_modulus3072_example.binarypb");
+                                  "/anonymous_tokens/testdata/strong_rsa_modulus3072_example.binarypb");
   ANON_TOKENS_ASSIGN_OR_RETURN(auto key_pair, ParseRsaKeysFromFile(path));
   return std::make_pair(std::move(key_pair.first), std::move(key_pair.second));
 }
 
 absl::StatusOr<std::pair<RSAPublicKey, RSAPrivateKey>> GetStrongRsaKeys4096() {
   std::string path = absl::StrCat(quiche::test::QuicheGetCommonSourcePath(),
-                                  "/anonymous_tokens/testing/data/strong_rsa_modulus4096_example.binarypb");
+                                  "/anonymous_tokens/testdata/strong_rsa_modulus4096_example.binarypb");
   ANON_TOKENS_ASSIGN_OR_RETURN(auto key_pair, ParseRsaKeysFromFile(path));
   return std::make_pair(std::move(key_pair.first), std::move(key_pair.second));
 }

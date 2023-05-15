@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -42,12 +43,17 @@ namespace quiche {
 
 namespace {
 
-const size_t kContinueStatusCode = 100;
+constexpr size_t kContinueStatusCode = 100;
+constexpr size_t kSwitchingProtocolsStatusCode = 101;
 
 constexpr absl::string_view kChunked = "chunked";
 constexpr absl::string_view kContentLength = "content-length";
 constexpr absl::string_view kIdentity = "identity";
 constexpr absl::string_view kTransferEncoding = "transfer-encoding";
+
+bool IsInterimResponse(size_t response_code) {
+  return response_code >= 100 && response_code < 200;
+}
 
 }  // namespace
 
@@ -523,7 +529,9 @@ void BalsaFrame::ProcessTransferEncodingLine(HeaderLines::size_type line_idx) {
     return;
   }
 
-  HandleError(BalsaFrameEnums::UNKNOWN_TRANSFER_ENCODING);
+  if (http_validation_policy().validate_transfer_encoding) {
+    HandleError(BalsaFrameEnums::UNKNOWN_TRANSFER_ENCODING);
+  }
 }
 
 bool BalsaFrame::CheckHeaderLinesForInvalidChars(const Lines& lines,
@@ -630,7 +638,8 @@ void BalsaFrame::ProcessHeaderLines(const Lines& lines, bool is_trailer,
       continue;
     }
     if (absl::EqualsIgnoreCase(key, kTransferEncoding)) {
-      if (transfer_encoding_idx != 0) {
+      if (http_validation_policy().validate_transfer_encoding &&
+          transfer_encoding_idx != 0) {
         HandleError(BalsaFrameEnums::MULTIPLE_TRANSFER_ENCODING_KEYS);
         return;
       }
@@ -639,7 +648,8 @@ void BalsaFrame::ProcessHeaderLines(const Lines& lines, bool is_trailer,
   }
 
   if (!is_trailer) {
-    if (http_validation_policy()
+    if (http_validation_policy().validate_transfer_encoding &&
+        http_validation_policy()
             .disallow_transfer_encoding_with_content_length &&
         content_length_idx != 0 && transfer_encoding_idx != 0) {
       HandleError(BalsaFrameEnums::BOTH_TRANSFER_ENCODING_AND_CONTENT_LENGTH);
@@ -844,6 +854,17 @@ size_t BalsaFrame::ProcessHeaders(const char* message_start,
       return message_current - original_message_start;
     }
 
+    if (use_interim_headers_callback_ &&
+        IsInterimResponse(headers_->parsed_response_code()) &&
+        headers_->parsed_response_code() != kSwitchingProtocolsStatusCode) {
+      // Deliver headers from this interim response but reset everything else to
+      // prepare for the next set of headers. Skip 101 Switching Protocols
+      // because these are considered final headers for the current protocol.
+      visitor_->OnInterimHeaders(std::move(*headers_));
+      Reset();
+      checkpoint = message_start = message_current;
+      continue;
+    }
     if (continue_headers_ != nullptr &&
         headers_->parsed_response_code_ == kContinueStatusCode) {
       // Save the headers from this 100 Continue response but reset everything

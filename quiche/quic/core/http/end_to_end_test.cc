@@ -430,10 +430,6 @@ class EndToEndTest : public QuicTestWithParam<TestParams> {
       copt.push_back(kILD0);
     }
     copt.push_back(kPLE1);
-    if (!GetQuicReloadableFlag(
-            quic_remove_connection_migration_connection_option_v2)) {
-      copt.push_back(kRVCM);
-    }
     client_config_.SetConnectionOptionsToSend(copt);
 
     // Start the server first, because CreateQuicClient() attempts
@@ -6991,6 +6987,49 @@ TEST_P(EndToEndTest, WebTransportSessionStreamTermination) {
   }));
 }
 
+// This test currently does not pass; we need support for
+// https://datatracker.ietf.org/doc/draft-seemann-quic-reliable-stream-reset/ in
+// order to make this work.
+TEST_P(EndToEndTest, DISABLED_WebTransportSessionResetReliability) {
+  enable_web_transport_ = true;
+  ASSERT_TRUE(Initialize());
+
+  if (!version_.UsesHttp3()) {
+    return;
+  }
+
+  SetPacketLossPercentage(30);
+
+  WebTransportHttp3* session =
+      CreateWebTransportSession("/resets", /*wait_for_server_response=*/true);
+  ASSERT_TRUE(session != nullptr);
+
+  NiceMock<MockWebTransportSessionVisitor>& visitor =
+      SetupWebTransportVisitor(session);
+  EXPECT_CALL(visitor, OnIncomingUnidirectionalStreamAvailable())
+      .WillRepeatedly([this, session]() {
+        ReadAllIncomingWebTransportUnidirectionalStreams(session);
+      });
+
+  std::vector<std::string> expected_log;
+  constexpr int kStreamsToCreate = 10;
+  for (int i = 0; i < kStreamsToCreate; i++) {
+    WebTransportStream* stream = session->OpenOutgoingBidirectionalStream();
+    QuicStreamId id = stream->GetStreamId();
+    ASSERT_TRUE(stream != nullptr);
+    stream->ResetWithUserCode(42);
+
+    expected_log.push_back(
+        absl::StrCat("Received reset for stream ", id, " with error code 42"));
+  }
+  client_->WaitUntil(2000, [this, &expected_log]() {
+    return received_webtransport_unidirectional_streams_.size() >=
+           expected_log.size();
+  });
+  EXPECT_THAT(received_webtransport_unidirectional_streams_,
+              UnorderedElementsAreArray(expected_log));
+}
+
 TEST_P(EndToEndTest, WebTransportSession404) {
   enable_web_transport_ = true;
   ASSERT_TRUE(Initialize());
@@ -7017,7 +7056,6 @@ TEST_P(EndToEndTest, WebTransportSession404) {
 }
 
 TEST_P(EndToEndTest, InvalidExtendedConnect) {
-  SetQuicReloadableFlag(quic_verify_request_headers_2, true);
   SetQuicReloadableFlag(quic_act_upon_invalid_header, true);
   ASSERT_TRUE(Initialize());
 
@@ -7038,7 +7076,6 @@ TEST_P(EndToEndTest, InvalidExtendedConnect) {
 }
 
 TEST_P(EndToEndTest, RejectExtendedConnect) {
-  SetQuicReloadableFlag(quic_verify_request_headers_2, true);
   SetQuicReloadableFlag(quic_act_upon_invalid_header, true);
   // Disable extended CONNECT.
   memory_cache_backend_.set_enable_extended_connect(false);
@@ -7072,7 +7109,6 @@ TEST_P(EndToEndTest, RejectExtendedConnect) {
 }
 
 TEST_P(EndToEndTest, RejectInvalidRequestHeader) {
-  SetQuicReloadableFlag(quic_verify_request_headers_2, true);
   SetQuicReloadableFlag(quic_act_upon_invalid_header, true);
   ASSERT_TRUE(Initialize());
 
@@ -7090,7 +7126,6 @@ TEST_P(EndToEndTest, RejectInvalidRequestHeader) {
 }
 
 TEST_P(EndToEndTest, RejectTransferEncodingResponse) {
-  SetQuicReloadableFlag(quic_verify_request_headers_2, true);
   SetQuicReloadableFlag(quic_act_upon_invalid_header, true);
   ASSERT_TRUE(Initialize());
 
@@ -7111,7 +7146,6 @@ TEST_P(EndToEndTest, RejectTransferEncodingResponse) {
 }
 
 TEST_P(EndToEndTest, RejectUpperCaseRequest) {
-  SetQuicReloadableFlag(quic_verify_request_headers_2, true);
   SetQuicReloadableFlag(quic_act_upon_invalid_header, true);
   ASSERT_TRUE(Initialize());
 
@@ -7128,7 +7162,6 @@ TEST_P(EndToEndTest, RejectUpperCaseRequest) {
 }
 
 TEST_P(EndToEndTest, RejectRequestWithInvalidToken) {
-  SetQuicReloadableFlag(quic_verify_request_headers_2, true);
   SetQuicReloadableFlag(quic_act_upon_invalid_header, true);
   ASSERT_TRUE(Initialize());
 
@@ -7182,50 +7215,141 @@ TEST_P(EndToEndTest, OriginalConnectionIdClearedFromMap) {
   server_thread_->Resume();
 }
 
-TEST_P(EndToEndTest, EcnMarksReportedCorrectly) {
+TEST_P(EndToEndTest, ServerReportsNotEct) {
   // Client connects using not-ECT.
+  SetQuicReloadableFlag(quic_send_ect1, true);
   ASSERT_TRUE(Initialize());
   QuicConnection* client_connection = GetClientConnection();
+  QuicConnectionPeer::DisableEcnCodepointValidation(client_connection);
   QuicEcnCounts* ecn = QuicSentPacketManagerPeer::GetPeerEcnCounts(
       QuicConnectionPeer::GetSentPacketManager(client_connection),
       APPLICATION_DATA);
   EXPECT_EQ(ecn->ect0, 0);
   EXPECT_EQ(ecn->ect1, 0);
   EXPECT_EQ(ecn->ce, 0);
-  QuicPacketCount ect0 = 0, ect1 = 0;
   TestPerPacketOptions options;
   client_connection->set_per_packet_options(&options);
-  for (QuicEcnCodepoint codepoint : {ECN_NOT_ECT, ECN_ECT0, ECN_ECT1, ECN_CE}) {
-    options.ecn_codepoint = codepoint;
-    client_->SendSynchronousRequest("/foo");
-    if (!GetQuicRestartFlag(quic_receive_ecn) ||
-        !GetQuicRestartFlag(quic_quiche_ecn_sockets) ||
-        !VersionHasIetfQuicFrames(version_.transport_version) ||
-        codepoint == ECN_NOT_ECT) {
-      EXPECT_EQ(ecn->ect0, 0);
-      EXPECT_EQ(ecn->ect1, 0);
-      EXPECT_EQ(ecn->ce, 0);
-      continue;
-    }
+  options.ecn_codepoint = ECN_NOT_ECT;
+  client_->SendSynchronousRequest("/foo");
+  EXPECT_EQ(ecn->ect0, 0);
+  EXPECT_EQ(ecn->ect1, 0);
+  EXPECT_EQ(ecn->ce, 0);
+  client_->Disconnect();
+}
+
+TEST_P(EndToEndTest, ServerReportsEct0) {
+  // Client connects using not-ECT.
+  SetQuicReloadableFlag(quic_send_ect1, true);
+  ASSERT_TRUE(Initialize());
+  QuicConnection* client_connection = GetClientConnection();
+  QuicConnectionPeer::DisableEcnCodepointValidation(client_connection);
+  QuicEcnCounts* ecn = QuicSentPacketManagerPeer::GetPeerEcnCounts(
+      QuicConnectionPeer::GetSentPacketManager(client_connection),
+      APPLICATION_DATA);
+  EXPECT_EQ(ecn->ect0, 0);
+  EXPECT_EQ(ecn->ect1, 0);
+  EXPECT_EQ(ecn->ce, 0);
+  TestPerPacketOptions options;
+  client_connection->set_per_packet_options(&options);
+  options.ecn_codepoint = ECN_ECT0;
+  client_->SendSynchronousRequest("/foo");
+  if (!GetQuicRestartFlag(quic_receive_ecn) ||
+      !GetQuicRestartFlag(quic_quiche_ecn_sockets) ||
+      !VersionHasIetfQuicFrames(version_.transport_version)) {
+    EXPECT_EQ(ecn->ect0, 0);
+  } else {
     EXPECT_GT(ecn->ect0, 0);
-    if (codepoint == ECN_CE) {
-      EXPECT_EQ(ect0, ecn->ect0);  // No more ECT(0) arriving
-      EXPECT_GE(ecn->ect1, ect1);  // Late-arriving ECT(1) control packets
-      EXPECT_GT(ecn->ce, 0);
-      continue;
-    }
-    EXPECT_EQ(ecn->ce, 0);
-    if (codepoint == ECN_ECT1) {
-      EXPECT_GE(ecn->ect0, ect0);  // Late-arriving ECT(0) control packets
-      ect0 = ecn->ect0;
-      ect1 = ecn->ect1;
-      EXPECT_GT(ect1, 0);
-      continue;
-    }
-    // codepoint == ECN_ECT0
-    ect0 = ecn->ect0;
-    EXPECT_EQ(ecn->ect1, 0);
   }
+  EXPECT_EQ(ecn->ect1, 0);
+  EXPECT_EQ(ecn->ce, 0);
+  client_->Disconnect();
+}
+
+TEST_P(EndToEndTest, ServerReportsEct1) {
+  // Client connects using not-ECT.
+  SetQuicReloadableFlag(quic_send_ect1, true);
+  ASSERT_TRUE(Initialize());
+  QuicConnection* client_connection = GetClientConnection();
+  QuicConnectionPeer::DisableEcnCodepointValidation(client_connection);
+  QuicEcnCounts* ecn = QuicSentPacketManagerPeer::GetPeerEcnCounts(
+      QuicConnectionPeer::GetSentPacketManager(client_connection),
+      APPLICATION_DATA);
+  EXPECT_EQ(ecn->ect0, 0);
+  EXPECT_EQ(ecn->ect1, 0);
+  EXPECT_EQ(ecn->ce, 0);
+  TestPerPacketOptions options;
+  client_connection->set_per_packet_options(&options);
+  options.ecn_codepoint = ECN_ECT1;
+  client_->SendSynchronousRequest("/foo");
+  if (!GetQuicRestartFlag(quic_receive_ecn) ||
+      !GetQuicRestartFlag(quic_quiche_ecn_sockets) ||
+      !VersionHasIetfQuicFrames(version_.transport_version)) {
+    EXPECT_EQ(ecn->ect1, 0);
+  } else {
+    EXPECT_GT(ecn->ect1, 0);
+  }
+  EXPECT_EQ(ecn->ect0, 0);
+  EXPECT_EQ(ecn->ce, 0);
+  client_->Disconnect();
+}
+
+TEST_P(EndToEndTest, ServerReportsCe) {
+  // Client connects using not-ECT.
+  SetQuicReloadableFlag(quic_send_ect1, true);
+  ASSERT_TRUE(Initialize());
+  QuicConnection* client_connection = GetClientConnection();
+  QuicConnectionPeer::DisableEcnCodepointValidation(client_connection);
+  QuicEcnCounts* ecn = QuicSentPacketManagerPeer::GetPeerEcnCounts(
+      QuicConnectionPeer::GetSentPacketManager(client_connection),
+      APPLICATION_DATA);
+  EXPECT_EQ(ecn->ect0, 0);
+  EXPECT_EQ(ecn->ect1, 0);
+  EXPECT_EQ(ecn->ce, 0);
+  TestPerPacketOptions options;
+  client_connection->set_per_packet_options(&options);
+  options.ecn_codepoint = ECN_CE;
+  client_->SendSynchronousRequest("/foo");
+  if (!GetQuicRestartFlag(quic_receive_ecn) ||
+      !GetQuicRestartFlag(quic_quiche_ecn_sockets) ||
+      !VersionHasIetfQuicFrames(version_.transport_version)) {
+    EXPECT_EQ(ecn->ce, 0);
+  } else {
+    EXPECT_GT(ecn->ce, 0);
+  }
+  EXPECT_EQ(ecn->ect0, 0);
+  EXPECT_EQ(ecn->ect1, 0);
+  client_->Disconnect();
+}
+
+TEST_P(EndToEndTest, ClientReportsEct1) {
+  SetQuicReloadableFlag(quic_send_ect1, true);
+  ASSERT_TRUE(Initialize());
+  // Wait for handshake to complete, so that we can manipulate the server
+  // connection without race conditions.
+  server_thread_->WaitForCryptoHandshakeConfirmed();
+  QuicConnection* server_connection = GetServerConnection();
+  QuicConnectionPeer::DisableEcnCodepointValidation(server_connection);
+  QuicEcnCounts* ecn = QuicSentPacketManagerPeer::GetPeerEcnCounts(
+      QuicConnectionPeer::GetSentPacketManager(server_connection),
+      APPLICATION_DATA);
+  TestPerPacketOptions options;
+  options.ecn_codepoint = ECN_ECT1;
+  server_connection->set_per_packet_options(&options);
+  client_->SendSynchronousRequest("/foo");
+  // A second request provides a packet for the client ACKs to go with.
+  client_->SendSynchronousRequest("/foo");
+  server_thread_->Pause();
+  EXPECT_EQ(ecn->ect0, 0);
+  EXPECT_EQ(ecn->ce, 0);
+  if (!GetQuicRestartFlag(quic_receive_ecn) ||
+      !GetQuicRestartFlag(quic_quiche_ecn_sockets) ||
+      !VersionHasIetfQuicFrames(version_.transport_version)) {
+    EXPECT_EQ(ecn->ect1, 0);
+  } else {
+    EXPECT_GT(ecn->ect1, 0);
+  }
+  server_connection->set_per_packet_options(nullptr);
+  server_thread_->Resume();
   client_->Disconnect();
 }
 

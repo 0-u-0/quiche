@@ -28,6 +28,10 @@
 #include "quiche/blind_sign_auth/anonymous_tokens/cpp/crypto/crypto_utils.h"
 #include "quiche/blind_sign_auth/anonymous_tokens/proto/anonymous_tokens.pb.h"
 #include "quiche/common/platform/api/quiche_export.h"
+// copybara:strip_begin(internal comment)
+// The QUICHE_EXPORT annotation is necessary for some classes and functions
+// to link correctly on Windows. Please do not remove them!
+// copybara:strip_end
 
 namespace private_membership {
 namespace anonymous_tokens {
@@ -68,7 +72,7 @@ class QUICHE_EXPORT RsaBlinder : public Blinder {
              bssl::UniquePtr<BN_MONT_CTX> mont_n);
 
   const int salt_length_;
-  std::optional<absl::string_view> public_metadata_;
+  std::optional<std::string> public_metadata_;
   const EVP_MD* sig_hash_;   // Owned by BoringSSL.
   const EVP_MD* mgf1_hash_;  // Owned by BoringSSL.
 
