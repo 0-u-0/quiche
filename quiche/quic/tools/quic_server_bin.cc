@@ -14,13 +14,13 @@
 
 int main(int argc, char* argv[]) {
   quiche::QuicheSystemEventLoop event_loop("quic_server");
-  const char* usage = "Usage: quic_server [options]";
-  std::vector<std::string> non_option_args =
-      quiche::QuicheParseCommandLineFlags(usage, argc, argv);
-  if (!non_option_args.empty()) {
-    quiche::QuichePrintCommandLineFlagHelp(usage);
-    exit(0);
-  }
+  // const char* usage = "Usage: quic_server [options]";
+  // std::vector<std::string> non_option_args =
+  //     quiche::QuicheParseCommandLineFlags(usage, argc, argv);
+  // if (!non_option_args.empty()) {
+  //   quiche::QuichePrintCommandLineFlagHelp(usage);
+  //   exit(0);
+  // }
 
   quic::QuicToyServer::MemoryCacheBackendFactory backend_factory;
   quic::QuicServerFactory server_factory;

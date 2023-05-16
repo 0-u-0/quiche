@@ -7,15 +7,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_PREFIX_PATH /root/quiche/deps)
 
-add_subdirectory(/root/google_url build)
+add_subdirectory(/root/google_url googleurl/build)
 
-# set(ABSL_PROPAGATE_CXX_STD ON)
-# add_subdirectory(third_party/abseil-cpp)
+set(ABSL_PROPAGATE_CXX_STD ON)
+add_subdirectory(third_party/abseil-cpp)
 
 find_package(Threads REQUIRED)
 find_package(OpenSSL CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
-find_package(absl CONFIG REQUIRED)
+# find_package(absl CONFIG REQUIRED)
 
 
 
@@ -48,18 +48,18 @@ include_directories(
 )
 
 link_libraries(
-  absl::strings
-  absl::base
-  absl::flags
-  absl::utility
+  # absl::strings
+  # absl::base
+  # absl::flags
+  # absl::utility
 
-  OpenSSL::Crypto OpenSSL::SSL
-  protobuf::libprotoc
-  googleurl
+  # OpenSSL::Crypto OpenSSL::SSL
+  # protobuf::libprotoc
+  # googleurl
 
-  cached_network_parameters_proto_lib
-  crypto_server_config_proto_lib
-  source_address_token_proto_lib
+  # cached_network_parameters_proto_lib
+  # crypto_server_config_proto_lib
+  # source_address_token_proto_lib
 )
 
 set(QUICHE_CORE_HEADERS 
@@ -915,6 +915,20 @@ set(IO_TOOL_SUPPORT_SRCS
   quiche/quic/tools/quic_server.cc
 )
 
+
+add_library(quiche_platform_default_tools
+  ${QUICHE_PLATFORM_DEFAULT_TOOLS_HEADERS}
+  ${QUICHE_PLATFORM_DEFAULT_TOOLS_SRCS}
+)
+
+
+target_link_libraries(quiche_platform_default_tools PUBLIC
+  quiche_core
+  absl::flags
+  # absl::strings
+  # absl::base
+  # absl::utility
+)
 #
 
 add_library(io_tool_support
@@ -922,30 +936,32 @@ add_library(io_tool_support
   ${IO_TOOL_SUPPORT_SRCS}
 )
 
-target_link_libraries(io_tool_support
-  PUBLIC
+target_link_libraries(io_tool_support PUBLIC
+  quiche_core
   quiche_tool_support
+  quiche_platform_default_tools
+
+  OpenSSL::Crypto
+  
+  googleurl
+
+  absl::strings
+
 )
 #
 
-add_library(quiche_platform_default_tools
-  ${QUICHE_PLATFORM_DEFAULT_TOOLS_HEADERS}
-  ${QUICHE_PLATFORM_DEFAULT_TOOLS_SRCS}
-)
-
-target_link_libraries(quiche_platform_default_tools PUBLIC
-  quiche_core
-  absl::strings
-  absl::base
-  absl::flags
-  absl::utility
-)
 
 #
 
 add_library(quiche_platform_default
   ${QUICHE_PLATFORM_DEFAULT_HEADERS}
   ${QUICHE_PLATFORM_DEFAULT_SRCS}
+)
+
+target_link_libraries(quiche_platform_default
+  PUBLIC
+  absl::synchronization
+  googleurl
 )
 
 #
@@ -955,6 +971,13 @@ add_library(quiche_core
 
 target_link_libraries(quiche_core PUBLIC 
   quiche_platform_default
+  
+  cached_network_parameters_proto_lib
+  crypto_server_config_proto_lib
+  source_address_token_proto_lib
+
+  OpenSSL::Crypto OpenSSL::SSL
+
 )
 
 #
@@ -962,9 +985,11 @@ add_library(quiche_tool_support
   ${QUICHE_TOOL_SUPPORT_HEADERS} ${QUICHE_TOOL_SUPPORT_SRCS}
 )
 
-target_link_libraries(quiche_tool_support PRIVATE 
-  quiche_platform_default_tools
-  quiche_core
+target_link_libraries(quiche_tool_support PUBLIC 
+quiche_core
+quiche_platform_default_tools
+
+googleurl
 )
 
 #
@@ -973,6 +998,12 @@ add_library(quic_toy_server
   quiche/quic/tools/quic_toy_server.cc
 )
 
+target_link_libraries(quic_toy_server PUBLIC
+  io_tool_support
+  quiche_core
+  quiche_platform_default_tools
+  quiche_tool_support
+)
 #
 
 add_library(quic_server_factory 
@@ -980,18 +1011,27 @@ add_library(quic_server_factory
   quiche/quic/tools/quic_server_factory.cc
 )
 
+target_link_libraries(quic_server_factory PUBLIC
+  io_tool_support
+  quic_toy_server
+)
 
 
 #
 
 add_executable(quic_server
-  quiche/quic/tools/quic_server_bin.cc)
+  quiche/quic/tools/quic_server_bin.cc
+  # main.cc  
+) 
 
 
 target_link_libraries(quic_server 
   PUBLIC 
-  quic_server_factory
+  io_tool_support # ok
+  quic_server_factory # ok
   quic_toy_server
   quiche_core
+  quiche_platform_default
+  quiche_platform_default_tools
   quiche_tool_support
-  io_tool_support)
+  absl::flags)
