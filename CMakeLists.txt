@@ -1,7 +1,997 @@
 cmake_minimum_required(VERSION 3.0.0)
 project(quiche VERSION 0.1.0)
 
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+
+set(CMAKE_PREFIX_PATH /root/quiche/deps)
 
 add_subdirectory(/root/google_url build)
 
-add_executable(quiche main.cc)
+# set(ABSL_PROPAGATE_CXX_STD ON)
+# add_subdirectory(third_party/abseil-cpp)
+
+find_package(Threads REQUIRED)
+find_package(OpenSSL CONFIG REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
+find_package(absl CONFIG REQUIRED)
+
+
+
+# proto
+set(protobuf_PROTOC_EXE /root/rtc/deps/bin/protoc)
+
+function(addProtobufLib libname protopath importdir)
+  message(addProtobufLib: ${libname} ${protopath})
+
+  add_library(${libname} OBJECT ${protopath})
+  target_link_libraries(${libname} PUBLIC protobuf::libprotobuf)
+  set(PROTO_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/generated)
+  target_include_directories(${libname} PUBLIC $<BUILD_INTERFACE:${PROTO_BINARY_DIR}>)
+    
+  protobuf_generate(
+      TARGET ${libname}
+      IMPORT_DIRS ${importdir}
+      PROTOC_OUT_DIR ${PROTO_BINARY_DIR})
+  
+endfunction()
+
+addProtobufLib(cached_network_parameters_proto_lib ${CMAKE_CURRENT_LIST_DIR}/quiche/quic/core/proto/cached_network_parameters.proto ${CMAKE_CURRENT_LIST_DIR})
+addProtobufLib(source_address_token_proto_lib ${CMAKE_CURRENT_LIST_DIR}/quiche/quic/core/proto/source_address_token.proto ${CMAKE_CURRENT_LIST_DIR})
+addProtobufLib(crypto_server_config_proto_lib ${CMAKE_CURRENT_LIST_DIR}/quiche/quic/core/proto/crypto_server_config.proto ${CMAKE_CURRENT_LIST_DIR})
+addProtobufLib(quic_trace_proto_lib ${CMAKE_CURRENT_LIST_DIR}/third_party/quic-trace/quic_trace/quic_trace.proto ${CMAKE_CURRENT_LIST_DIR}/third_party/quic-trace)
+
+include_directories(
+  .
+  quiche/common/platform/default
+)
+
+link_libraries(
+  absl::strings
+  absl::base
+  absl::flags
+  absl::utility
+
+  OpenSSL::Crypto OpenSSL::SSL
+  protobuf::libprotoc
+  googleurl
+
+  cached_network_parameters_proto_lib
+  crypto_server_config_proto_lib
+  source_address_token_proto_lib
+)
+
+set(QUICHE_CORE_HEADERS 
+  quiche/balsa/balsa_enums.h
+  quiche/balsa/balsa_frame.h
+  quiche/balsa/balsa_headers.h
+  quiche/balsa/balsa_headers_sequence.h
+  quiche/balsa/balsa_visitor_interface.h
+  quiche/balsa/framer_interface.h
+  quiche/balsa/header_api.h
+  quiche/balsa/header_properties.h
+  quiche/balsa/http_validation_policy.h
+  quiche/balsa/noop_balsa_visitor.h
+  quiche/balsa/simple_buffer.h
+  quiche/balsa/standard_header_map.h
+  quiche/common/btree_scheduler.h
+  quiche/common/capsule.h
+  quiche/common/masque/connect_udp_datagram_payload.h
+  quiche/common/platform/api/quiche_bug_tracker.h
+  quiche/common/platform/api/quiche_client_stats.h
+  quiche/common/platform/api/quiche_containers.h
+  quiche/common/platform/api/quiche_export.h
+  quiche/common/platform/api/quiche_flag_utils.h
+  quiche/common/platform/api/quiche_flags.h
+  quiche/common/platform/api/quiche_header_policy.h
+  quiche/common/platform/api/quiche_hostname_utils.h
+  quiche/common/platform/api/quiche_iovec.h
+  quiche/common/platform/api/quiche_logging.h
+  quiche/common/platform/api/quiche_lower_case_string.h
+  quiche/common/platform/api/quiche_mem_slice.h
+  quiche/common/platform/api/quiche_mutex.h
+  quiche/common/platform/api/quiche_prefetch.h
+  quiche/common/platform/api/quiche_reference_counted.h
+  quiche/common/platform/api/quiche_server_stats.h
+  quiche/common/platform/api/quiche_stack_trace.h
+  quiche/common/platform/api/quiche_testvalue.h
+  quiche/common/platform/api/quiche_thread.h
+  quiche/common/platform/api/quiche_time_utils.h
+  quiche/common/platform/api/quiche_url_utils.h
+  quiche/common/print_elements.h
+  quiche/common/quiche_buffer_allocator.h
+  quiche/common/quiche_circular_deque.h
+  quiche/common/quiche_crypto_logging.h
+  quiche/common/quiche_data_reader.h
+  quiche/common/quiche_data_writer.h
+  quiche/common/quiche_endian.h
+  quiche/common/quiche_ip_address.h
+  quiche/common/quiche_ip_address_family.h
+  quiche/common/quiche_linked_hash_map.h
+  quiche/common/quiche_mem_slice_storage.h
+  quiche/common/quiche_protocol_flags_list.h
+  quiche/common/quiche_random.h
+  quiche/common/quiche_status_utils.h
+  quiche/common/quiche_stream.h
+  quiche/common/quiche_text_utils.h
+  quiche/common/simple_buffer_allocator.h
+  quiche/common/structured_headers.h
+  quiche/common/wire_serialization.h
+  quiche/http2/adapter/data_source.h
+  quiche/http2/adapter/event_forwarder.h
+  quiche/http2/adapter/header_validator.h
+  quiche/http2/adapter/header_validator_base.h
+  quiche/http2/adapter/http2_adapter.h
+  quiche/http2/adapter/http2_protocol.h
+  quiche/http2/adapter/http2_session.h
+  quiche/http2/adapter/http2_util.h
+  quiche/http2/adapter/http2_visitor_interface.h
+  quiche/http2/adapter/noop_header_validator.h
+  quiche/http2/adapter/oghttp2_adapter.h
+  quiche/http2/adapter/oghttp2_session.h
+  quiche/http2/adapter/oghttp2_util.h
+  quiche/http2/adapter/window_manager.h
+  quiche/http2/core/http2_trace_logging.h
+  quiche/http2/core/priority_write_scheduler.h
+  quiche/http2/decoder/decode_buffer.h
+  quiche/http2/decoder/decode_http2_structures.h
+  quiche/http2/decoder/decode_status.h
+  quiche/http2/decoder/frame_decoder_state.h
+  quiche/http2/decoder/http2_frame_decoder.h
+  quiche/http2/decoder/http2_frame_decoder_listener.h
+  quiche/http2/decoder/http2_structure_decoder.h
+  quiche/http2/decoder/payload_decoders/altsvc_payload_decoder.h
+  quiche/http2/decoder/payload_decoders/continuation_payload_decoder.h
+  quiche/http2/decoder/payload_decoders/data_payload_decoder.h
+  quiche/http2/decoder/payload_decoders/goaway_payload_decoder.h
+  quiche/http2/decoder/payload_decoders/headers_payload_decoder.h
+  quiche/http2/decoder/payload_decoders/ping_payload_decoder.h
+  quiche/http2/decoder/payload_decoders/priority_payload_decoder.h
+  quiche/http2/decoder/payload_decoders/priority_update_payload_decoder.h
+  quiche/http2/decoder/payload_decoders/push_promise_payload_decoder.h
+  quiche/http2/decoder/payload_decoders/rst_stream_payload_decoder.h
+  quiche/http2/decoder/payload_decoders/settings_payload_decoder.h
+  quiche/http2/decoder/payload_decoders/unknown_payload_decoder.h
+  quiche/http2/decoder/payload_decoders/window_update_payload_decoder.h
+  quiche/http2/hpack/decoder/hpack_block_decoder.h
+  quiche/http2/hpack/decoder/hpack_decoder.h
+  quiche/http2/hpack/decoder/hpack_decoder_listener.h
+  quiche/http2/hpack/decoder/hpack_decoder_state.h
+  quiche/http2/hpack/decoder/hpack_decoder_string_buffer.h
+  quiche/http2/hpack/decoder/hpack_decoder_tables.h
+  quiche/http2/hpack/decoder/hpack_decoding_error.h
+  quiche/http2/hpack/decoder/hpack_entry_decoder.h
+  quiche/http2/hpack/decoder/hpack_entry_decoder_listener.h
+  quiche/http2/hpack/decoder/hpack_entry_type_decoder.h
+  quiche/http2/hpack/decoder/hpack_string_decoder.h
+  quiche/http2/hpack/decoder/hpack_string_decoder_listener.h
+  quiche/http2/hpack/decoder/hpack_whole_entry_buffer.h
+  quiche/http2/hpack/decoder/hpack_whole_entry_listener.h
+  quiche/http2/hpack/http2_hpack_constants.h
+  quiche/http2/hpack/huffman/hpack_huffman_decoder.h
+  quiche/http2/hpack/huffman/hpack_huffman_encoder.h
+  quiche/http2/hpack/huffman/huffman_spec_tables.h
+  quiche/http2/hpack/varint/hpack_varint_decoder.h
+  quiche/http2/hpack/varint/hpack_varint_encoder.h
+  quiche/http2/http2_constants.h
+  quiche/http2/http2_structures.h
+  quiche/quic/core/chlo_extractor.h
+  quiche/quic/core/congestion_control/bandwidth_sampler.h
+  quiche/quic/core/congestion_control/bbr2_drain.h
+  quiche/quic/core/congestion_control/bbr2_misc.h
+  quiche/quic/core/congestion_control/bbr2_probe_bw.h
+  quiche/quic/core/congestion_control/bbr2_probe_rtt.h
+  quiche/quic/core/congestion_control/bbr2_sender.h
+  quiche/quic/core/congestion_control/bbr2_startup.h
+  quiche/quic/core/congestion_control/bbr_sender.h
+  quiche/quic/core/congestion_control/cubic_bytes.h
+  quiche/quic/core/congestion_control/general_loss_algorithm.h
+  quiche/quic/core/congestion_control/hybrid_slow_start.h
+  quiche/quic/core/congestion_control/loss_detection_interface.h
+  quiche/quic/core/congestion_control/pacing_sender.h
+  quiche/quic/core/congestion_control/prr_sender.h
+  quiche/quic/core/congestion_control/rtt_stats.h
+  quiche/quic/core/congestion_control/send_algorithm_interface.h
+  quiche/quic/core/congestion_control/tcp_cubic_sender_bytes.h
+  quiche/quic/core/congestion_control/uber_loss_algorithm.h
+  quiche/quic/core/congestion_control/windowed_filter.h
+  quiche/quic/core/connecting_client_socket.h
+  quiche/quic/core/connection_id_generator.h
+  quiche/quic/core/crypto/aead_base_decrypter.h
+  quiche/quic/core/crypto/aead_base_encrypter.h
+  quiche/quic/core/crypto/aes_128_gcm_12_decrypter.h
+  quiche/quic/core/crypto/aes_128_gcm_12_encrypter.h
+  quiche/quic/core/crypto/aes_128_gcm_decrypter.h
+  quiche/quic/core/crypto/aes_128_gcm_encrypter.h
+  quiche/quic/core/crypto/aes_256_gcm_decrypter.h
+  quiche/quic/core/crypto/aes_256_gcm_encrypter.h
+  quiche/quic/core/crypto/aes_base_decrypter.h
+  quiche/quic/core/crypto/aes_base_encrypter.h
+  quiche/quic/core/crypto/boring_utils.h
+  quiche/quic/core/crypto/cert_compressor.h
+  quiche/quic/core/crypto/certificate_util.h
+  quiche/quic/core/crypto/certificate_view.h
+  quiche/quic/core/crypto/chacha20_poly1305_decrypter.h
+  quiche/quic/core/crypto/chacha20_poly1305_encrypter.h
+  quiche/quic/core/crypto/chacha20_poly1305_tls_decrypter.h
+  quiche/quic/core/crypto/chacha20_poly1305_tls_encrypter.h
+  quiche/quic/core/crypto/chacha_base_decrypter.h
+  quiche/quic/core/crypto/chacha_base_encrypter.h
+  quiche/quic/core/crypto/channel_id.h
+  quiche/quic/core/crypto/client_proof_source.h
+  quiche/quic/core/crypto/crypto_framer.h
+  quiche/quic/core/crypto/crypto_handshake.h
+  quiche/quic/core/crypto/crypto_handshake_message.h
+  quiche/quic/core/crypto/crypto_message_parser.h
+  quiche/quic/core/crypto/crypto_protocol.h
+  quiche/quic/core/crypto/crypto_secret_boxer.h
+  quiche/quic/core/crypto/crypto_utils.h
+  quiche/quic/core/crypto/curve25519_key_exchange.h
+  quiche/quic/core/crypto/key_exchange.h
+  quiche/quic/core/crypto/null_decrypter.h
+  quiche/quic/core/crypto/null_encrypter.h
+  quiche/quic/core/crypto/p256_key_exchange.h
+  quiche/quic/core/crypto/proof_source.h
+  quiche/quic/core/crypto/proof_source_x509.h
+  quiche/quic/core/crypto/proof_verifier.h
+  quiche/quic/core/crypto/quic_client_session_cache.h
+  quiche/quic/core/crypto/quic_compressed_certs_cache.h
+  quiche/quic/core/crypto/quic_crypter.h
+  quiche/quic/core/crypto/quic_crypto_client_config.h
+  quiche/quic/core/crypto/quic_crypto_proof.h
+  quiche/quic/core/crypto/quic_crypto_server_config.h
+  quiche/quic/core/crypto/quic_decrypter.h
+  quiche/quic/core/crypto/quic_encrypter.h
+  quiche/quic/core/crypto/quic_hkdf.h
+  quiche/quic/core/crypto/quic_random.h
+  quiche/quic/core/crypto/tls_client_connection.h
+  quiche/quic/core/crypto/tls_connection.h
+  quiche/quic/core/crypto/tls_server_connection.h
+  quiche/quic/core/crypto/transport_parameters.h
+  quiche/quic/core/crypto/web_transport_fingerprint_proof_verifier.h
+  quiche/quic/core/deterministic_connection_id_generator.h
+  quiche/quic/core/frames/quic_ack_frame.h
+  quiche/quic/core/frames/quic_ack_frequency_frame.h
+  quiche/quic/core/frames/quic_blocked_frame.h
+  quiche/quic/core/frames/quic_connection_close_frame.h
+  quiche/quic/core/frames/quic_crypto_frame.h
+  quiche/quic/core/frames/quic_frame.h
+  quiche/quic/core/frames/quic_goaway_frame.h
+  quiche/quic/core/frames/quic_handshake_done_frame.h
+  quiche/quic/core/frames/quic_inlined_frame.h
+  quiche/quic/core/frames/quic_max_streams_frame.h
+  quiche/quic/core/frames/quic_message_frame.h
+  quiche/quic/core/frames/quic_mtu_discovery_frame.h
+  quiche/quic/core/frames/quic_new_connection_id_frame.h
+  quiche/quic/core/frames/quic_new_token_frame.h
+  quiche/quic/core/frames/quic_padding_frame.h
+  quiche/quic/core/frames/quic_path_challenge_frame.h
+  quiche/quic/core/frames/quic_path_response_frame.h
+  quiche/quic/core/frames/quic_ping_frame.h
+  quiche/quic/core/frames/quic_retire_connection_id_frame.h
+  quiche/quic/core/frames/quic_rst_stream_frame.h
+  quiche/quic/core/frames/quic_stop_sending_frame.h
+  quiche/quic/core/frames/quic_stop_waiting_frame.h
+  quiche/quic/core/frames/quic_stream_frame.h
+  quiche/quic/core/frames/quic_streams_blocked_frame.h
+  quiche/quic/core/frames/quic_window_update_frame.h
+  quiche/quic/core/handshaker_delegate_interface.h
+  quiche/quic/core/http/http_constants.h
+  quiche/quic/core/http/http_decoder.h
+  quiche/quic/core/http/http_encoder.h
+  quiche/quic/core/http/http_frames.h
+  quiche/quic/core/http/quic_client_promised_info.h
+  quiche/quic/core/http/quic_client_push_promise_index.h
+  quiche/quic/core/http/quic_header_list.h
+  quiche/quic/core/http/quic_headers_stream.h
+  quiche/quic/core/http/quic_receive_control_stream.h
+  quiche/quic/core/http/quic_send_control_stream.h
+  quiche/quic/core/http/quic_server_initiated_spdy_stream.h
+  quiche/quic/core/http/quic_server_session_base.h
+  quiche/quic/core/http/quic_spdy_client_session.h
+  quiche/quic/core/http/quic_spdy_client_session_base.h
+  quiche/quic/core/http/quic_spdy_client_stream.h
+  quiche/quic/core/http/quic_spdy_server_stream_base.h
+  quiche/quic/core/http/quic_spdy_session.h
+  quiche/quic/core/http/quic_spdy_stream.h
+  quiche/quic/core/http/quic_spdy_stream_body_manager.h
+  quiche/quic/core/http/spdy_server_push_utils.h
+  quiche/quic/core/http/spdy_utils.h
+  quiche/quic/core/http/web_transport_http3.h
+  quiche/quic/core/http/web_transport_stream_adapter.h
+  quiche/quic/core/legacy_quic_stream_id_manager.h
+  quiche/quic/core/packet_number_indexed_queue.h
+  quiche/quic/core/proto/cached_network_parameters_proto.h
+  quiche/quic/core/proto/crypto_server_config_proto.h
+  quiche/quic/core/proto/source_address_token_proto.h
+  quiche/quic/core/qpack/qpack_blocking_manager.h
+  quiche/quic/core/qpack/qpack_decoded_headers_accumulator.h
+  quiche/quic/core/qpack/qpack_decoder.h
+  quiche/quic/core/qpack/qpack_decoder_stream_receiver.h
+  quiche/quic/core/qpack/qpack_decoder_stream_sender.h
+  quiche/quic/core/qpack/qpack_encoder.h
+  quiche/quic/core/qpack/qpack_encoder_stream_receiver.h
+  quiche/quic/core/qpack/qpack_encoder_stream_sender.h
+  quiche/quic/core/qpack/qpack_header_table.h
+  quiche/quic/core/qpack/qpack_index_conversions.h
+  quiche/quic/core/qpack/qpack_instruction_decoder.h
+  quiche/quic/core/qpack/qpack_instruction_encoder.h
+  quiche/quic/core/qpack/qpack_instructions.h
+  quiche/quic/core/qpack/qpack_progressive_decoder.h
+  quiche/quic/core/qpack/qpack_receive_stream.h
+  quiche/quic/core/qpack/qpack_required_insert_count.h
+  quiche/quic/core/qpack/qpack_send_stream.h
+  quiche/quic/core/qpack/qpack_static_table.h
+  quiche/quic/core/qpack/qpack_stream_receiver.h
+  quiche/quic/core/qpack/qpack_stream_sender_delegate.h
+  quiche/quic/core/qpack/value_splitting_header_list.h
+  quiche/quic/core/quic_ack_listener_interface.h
+  quiche/quic/core/quic_alarm.h
+  quiche/quic/core/quic_alarm_factory.h
+  quiche/quic/core/quic_arena_scoped_ptr.h
+  quiche/quic/core/quic_bandwidth.h
+  quiche/quic/core/quic_blocked_writer_interface.h
+  quiche/quic/core/quic_buffered_packet_store.h
+  quiche/quic/core/quic_chaos_protector.h
+  quiche/quic/core/quic_clock.h
+  quiche/quic/core/quic_coalesced_packet.h
+  quiche/quic/core/quic_config.h
+  quiche/quic/core/quic_connection.h
+  quiche/quic/core/quic_connection_context.h
+  quiche/quic/core/quic_connection_id.h
+  quiche/quic/core/quic_connection_id_manager.h
+  quiche/quic/core/quic_connection_stats.h
+  quiche/quic/core/quic_constants.h
+  quiche/quic/core/quic_control_frame_manager.h
+  quiche/quic/core/quic_crypto_client_handshaker.h
+  quiche/quic/core/quic_crypto_client_stream.h
+  quiche/quic/core/quic_crypto_handshaker.h
+  quiche/quic/core/quic_crypto_server_stream.h
+  quiche/quic/core/quic_crypto_server_stream_base.h
+  quiche/quic/core/quic_crypto_stream.h
+  quiche/quic/core/quic_data_reader.h
+  quiche/quic/core/quic_data_writer.h
+  quiche/quic/core/quic_datagram_queue.h
+  quiche/quic/core/quic_default_clock.h
+  quiche/quic/core/quic_default_connection_helper.h
+  quiche/quic/core/quic_dispatcher.h
+  quiche/quic/core/quic_error_codes.h
+  quiche/quic/core/quic_flags_list.h
+  quiche/quic/core/quic_flow_controller.h
+  quiche/quic/core/quic_framer.h
+  quiche/quic/core/quic_idle_network_detector.h
+  quiche/quic/core/quic_interval.h
+  quiche/quic/core/quic_interval_deque.h
+  quiche/quic/core/quic_interval_set.h
+  quiche/quic/core/quic_lru_cache.h
+  quiche/quic/core/quic_mtu_discovery.h
+  quiche/quic/core/quic_network_blackhole_detector.h
+  quiche/quic/core/quic_one_block_arena.h
+  quiche/quic/core/quic_packet_creator.h
+  quiche/quic/core/quic_packet_number.h
+  quiche/quic/core/quic_packet_writer.h
+  quiche/quic/core/quic_packet_writer_wrapper.h
+  quiche/quic/core/quic_packets.h
+  quiche/quic/core/quic_path_validator.h
+  quiche/quic/core/quic_ping_manager.h
+  quiche/quic/core/quic_process_packet_interface.h
+  quiche/quic/core/quic_protocol_flags_list.h
+  quiche/quic/core/quic_received_packet_manager.h
+  quiche/quic/core/quic_sent_packet_manager.h
+  quiche/quic/core/quic_server_id.h
+  quiche/quic/core/quic_session.h
+  quiche/quic/core/quic_socket_address_coder.h
+  quiche/quic/core/quic_stream.h
+  quiche/quic/core/quic_stream_frame_data_producer.h
+  quiche/quic/core/quic_stream_id_manager.h
+  quiche/quic/core/quic_stream_priority.h
+  quiche/quic/core/quic_stream_send_buffer.h
+  quiche/quic/core/quic_stream_sequencer.h
+  quiche/quic/core/quic_stream_sequencer_buffer.h
+  quiche/quic/core/quic_sustained_bandwidth_recorder.h
+  quiche/quic/core/quic_tag.h
+  quiche/quic/core/quic_time.h
+  quiche/quic/core/quic_time_accumulator.h
+  quiche/quic/core/quic_time_wait_list_manager.h
+  quiche/quic/core/quic_trace_visitor.h
+  quiche/quic/core/quic_transmission_info.h
+  quiche/quic/core/quic_types.h
+  quiche/quic/core/quic_unacked_packet_map.h
+  quiche/quic/core/quic_utils.h
+  quiche/quic/core/quic_version_manager.h
+  quiche/quic/core/quic_versions.h
+  quiche/quic/core/quic_write_blocked_list.h
+  quiche/quic/core/session_notifier_interface.h
+  quiche/quic/core/socket_factory.h
+  quiche/quic/core/stream_delegate_interface.h
+  quiche/quic/core/tls_chlo_extractor.h
+  quiche/quic/core/tls_client_handshaker.h
+  quiche/quic/core/tls_handshaker.h
+  quiche/quic/core/tls_server_handshaker.h
+  quiche/quic/core/uber_quic_stream_id_manager.h
+  quiche/quic/core/uber_received_packet_manager.h
+  quiche/quic/core/web_transport_interface.h
+  quiche/quic/platform/api/quic_bug_tracker.h
+  quiche/quic/platform/api/quic_client_stats.h
+  quiche/quic/platform/api/quic_export.h
+  quiche/quic/platform/api/quic_exported_stats.h
+  quiche/quic/platform/api/quic_flag_utils.h
+  quiche/quic/platform/api/quic_flags.h
+  quiche/quic/platform/api/quic_hostname_utils.h
+  quiche/quic/platform/api/quic_ip_address.h
+  quiche/quic/platform/api/quic_ip_address_family.h
+  quiche/quic/platform/api/quic_logging.h
+  quiche/quic/platform/api/quic_mutex.h
+  quiche/quic/platform/api/quic_server_stats.h
+  quiche/quic/platform/api/quic_socket_address.h
+  quiche/quic/platform/api/quic_stack_trace.h
+  quiche/quic/platform/api/quic_testvalue.h
+  quiche/quic/platform/api/quic_thread.h
+  quiche/spdy/core/array_output_buffer.h
+  quiche/spdy/core/header_byte_listener_interface.h
+  quiche/spdy/core/hpack/hpack_constants.h
+  quiche/spdy/core/hpack/hpack_decoder_adapter.h
+  quiche/spdy/core/hpack/hpack_encoder.h
+  quiche/spdy/core/hpack/hpack_entry.h
+  quiche/spdy/core/hpack/hpack_header_table.h
+  quiche/spdy/core/hpack/hpack_output_stream.h
+  quiche/spdy/core/hpack/hpack_static_table.h
+  quiche/spdy/core/http2_frame_decoder_adapter.h
+  quiche/spdy/core/http2_header_block.h
+  quiche/spdy/core/http2_header_block_hpack_listener.h
+  quiche/spdy/core/http2_header_storage.h
+  quiche/spdy/core/metadata_extension.h
+  quiche/spdy/core/no_op_headers_handler.h
+  quiche/spdy/core/recording_headers_handler.h
+  quiche/spdy/core/spdy_alt_svc_wire_format.h
+  quiche/spdy/core/spdy_bitmasks.h
+  quiche/spdy/core/spdy_frame_builder.h
+  quiche/spdy/core/spdy_framer.h
+  quiche/spdy/core/spdy_headers_handler_interface.h
+  quiche/spdy/core/spdy_intrusive_list.h
+  quiche/spdy/core/spdy_no_op_visitor.h
+  quiche/spdy/core/spdy_pinnable_buffer_piece.h
+  quiche/spdy/core/spdy_prefixed_buffer_reader.h
+  quiche/spdy/core/spdy_protocol.h
+  quiche/spdy/core/spdy_simple_arena.h
+  quiche/spdy/core/zero_copy_output_buffer.h
+  quiche/web_transport/web_transport.h
+)
+
+set(QUICHE_CORE_SRCS
+  quiche/balsa/balsa_enums.cc
+  quiche/balsa/balsa_frame.cc
+  quiche/balsa/balsa_headers.cc
+  quiche/balsa/balsa_headers_sequence.cc
+  quiche/balsa/header_properties.cc
+  quiche/balsa/simple_buffer.cc
+  quiche/balsa/standard_header_map.cc
+  quiche/common/capsule.cc
+  quiche/common/masque/connect_udp_datagram_payload.cc
+  quiche/common/platform/api/quiche_hostname_utils.cc
+  quiche/common/platform/api/quiche_mutex.cc
+  quiche/common/quiche_buffer_allocator.cc
+  quiche/common/quiche_crypto_logging.cc
+  quiche/common/quiche_data_reader.cc
+  quiche/common/quiche_data_writer.cc
+  quiche/common/quiche_ip_address.cc
+  quiche/common/quiche_ip_address_family.cc
+  quiche/common/quiche_mem_slice_storage.cc
+  quiche/common/quiche_random.cc
+  quiche/common/quiche_text_utils.cc
+  quiche/common/simple_buffer_allocator.cc
+  quiche/common/structured_headers.cc
+  quiche/http2/adapter/event_forwarder.cc
+  quiche/http2/adapter/header_validator.cc
+  quiche/http2/adapter/http2_protocol.cc
+  quiche/http2/adapter/http2_util.cc
+  quiche/http2/adapter/noop_header_validator.cc
+  quiche/http2/adapter/oghttp2_adapter.cc
+  quiche/http2/adapter/oghttp2_session.cc
+  quiche/http2/adapter/oghttp2_util.cc
+  quiche/http2/adapter/window_manager.cc
+  quiche/http2/core/http2_trace_logging.cc
+  quiche/http2/decoder/decode_buffer.cc
+  quiche/http2/decoder/decode_http2_structures.cc
+  quiche/http2/decoder/decode_status.cc
+  quiche/http2/decoder/frame_decoder_state.cc
+  quiche/http2/decoder/http2_frame_decoder.cc
+  quiche/http2/decoder/http2_frame_decoder_listener.cc
+  quiche/http2/decoder/http2_structure_decoder.cc
+  quiche/http2/decoder/payload_decoders/altsvc_payload_decoder.cc
+  quiche/http2/decoder/payload_decoders/continuation_payload_decoder.cc
+  quiche/http2/decoder/payload_decoders/data_payload_decoder.cc
+  quiche/http2/decoder/payload_decoders/goaway_payload_decoder.cc
+  quiche/http2/decoder/payload_decoders/headers_payload_decoder.cc
+  quiche/http2/decoder/payload_decoders/ping_payload_decoder.cc
+  quiche/http2/decoder/payload_decoders/priority_payload_decoder.cc
+  quiche/http2/decoder/payload_decoders/priority_update_payload_decoder.cc
+  quiche/http2/decoder/payload_decoders/push_promise_payload_decoder.cc
+  quiche/http2/decoder/payload_decoders/rst_stream_payload_decoder.cc
+  quiche/http2/decoder/payload_decoders/settings_payload_decoder.cc
+  quiche/http2/decoder/payload_decoders/unknown_payload_decoder.cc
+  quiche/http2/decoder/payload_decoders/window_update_payload_decoder.cc
+  quiche/http2/hpack/decoder/hpack_block_decoder.cc
+  quiche/http2/hpack/decoder/hpack_decoder.cc
+  quiche/http2/hpack/decoder/hpack_decoder_listener.cc
+  quiche/http2/hpack/decoder/hpack_decoder_state.cc
+  quiche/http2/hpack/decoder/hpack_decoder_string_buffer.cc
+  quiche/http2/hpack/decoder/hpack_decoder_tables.cc
+  quiche/http2/hpack/decoder/hpack_decoding_error.cc
+  quiche/http2/hpack/decoder/hpack_entry_decoder.cc
+  quiche/http2/hpack/decoder/hpack_entry_decoder_listener.cc
+  quiche/http2/hpack/decoder/hpack_entry_type_decoder.cc
+  quiche/http2/hpack/decoder/hpack_string_decoder.cc
+  quiche/http2/hpack/decoder/hpack_string_decoder_listener.cc
+  quiche/http2/hpack/decoder/hpack_whole_entry_buffer.cc
+  quiche/http2/hpack/decoder/hpack_whole_entry_listener.cc
+  quiche/http2/hpack/http2_hpack_constants.cc
+  quiche/http2/hpack/huffman/hpack_huffman_decoder.cc
+  quiche/http2/hpack/huffman/hpack_huffman_encoder.cc
+  quiche/http2/hpack/huffman/huffman_spec_tables.cc
+  quiche/http2/hpack/varint/hpack_varint_decoder.cc
+  quiche/http2/hpack/varint/hpack_varint_encoder.cc
+  quiche/http2/http2_constants.cc
+  quiche/http2/http2_structures.cc
+  quiche/quic/core/chlo_extractor.cc
+  quiche/quic/core/congestion_control/bandwidth_sampler.cc
+  quiche/quic/core/congestion_control/bbr2_drain.cc
+  quiche/quic/core/congestion_control/bbr2_misc.cc
+  quiche/quic/core/congestion_control/bbr2_probe_bw.cc
+  quiche/quic/core/congestion_control/bbr2_probe_rtt.cc
+  quiche/quic/core/congestion_control/bbr2_sender.cc
+  quiche/quic/core/congestion_control/bbr2_startup.cc
+  quiche/quic/core/congestion_control/bbr_sender.cc
+  quiche/quic/core/congestion_control/cubic_bytes.cc
+  quiche/quic/core/congestion_control/general_loss_algorithm.cc
+  quiche/quic/core/congestion_control/hybrid_slow_start.cc
+  quiche/quic/core/congestion_control/pacing_sender.cc
+  quiche/quic/core/congestion_control/prr_sender.cc
+  quiche/quic/core/congestion_control/rtt_stats.cc
+  quiche/quic/core/congestion_control/send_algorithm_interface.cc
+  quiche/quic/core/congestion_control/tcp_cubic_sender_bytes.cc
+  quiche/quic/core/congestion_control/uber_loss_algorithm.cc
+  quiche/quic/core/crypto/aead_base_decrypter.cc
+  quiche/quic/core/crypto/aead_base_encrypter.cc
+  quiche/quic/core/crypto/aes_128_gcm_12_decrypter.cc
+  quiche/quic/core/crypto/aes_128_gcm_12_encrypter.cc
+  quiche/quic/core/crypto/aes_128_gcm_decrypter.cc
+  quiche/quic/core/crypto/aes_128_gcm_encrypter.cc
+  quiche/quic/core/crypto/aes_256_gcm_decrypter.cc
+  quiche/quic/core/crypto/aes_256_gcm_encrypter.cc
+  quiche/quic/core/crypto/aes_base_decrypter.cc
+  quiche/quic/core/crypto/aes_base_encrypter.cc
+  quiche/quic/core/crypto/cert_compressor.cc
+  quiche/quic/core/crypto/certificate_util.cc
+  quiche/quic/core/crypto/certificate_view.cc
+  quiche/quic/core/crypto/chacha20_poly1305_decrypter.cc
+  quiche/quic/core/crypto/chacha20_poly1305_encrypter.cc
+  quiche/quic/core/crypto/chacha20_poly1305_tls_decrypter.cc
+  quiche/quic/core/crypto/chacha20_poly1305_tls_encrypter.cc
+  quiche/quic/core/crypto/chacha_base_decrypter.cc
+  quiche/quic/core/crypto/chacha_base_encrypter.cc
+  quiche/quic/core/crypto/channel_id.cc
+  quiche/quic/core/crypto/client_proof_source.cc
+  quiche/quic/core/crypto/crypto_framer.cc
+  quiche/quic/core/crypto/crypto_handshake.cc
+  quiche/quic/core/crypto/crypto_handshake_message.cc
+  quiche/quic/core/crypto/crypto_secret_boxer.cc
+  quiche/quic/core/crypto/crypto_utils.cc
+  quiche/quic/core/crypto/curve25519_key_exchange.cc
+  quiche/quic/core/crypto/key_exchange.cc
+  quiche/quic/core/crypto/null_decrypter.cc
+  quiche/quic/core/crypto/null_encrypter.cc
+  quiche/quic/core/crypto/p256_key_exchange.cc
+  quiche/quic/core/crypto/proof_source.cc
+  quiche/quic/core/crypto/proof_source_x509.cc
+  quiche/quic/core/crypto/quic_client_session_cache.cc
+  quiche/quic/core/crypto/quic_compressed_certs_cache.cc
+  quiche/quic/core/crypto/quic_crypter.cc
+  quiche/quic/core/crypto/quic_crypto_client_config.cc
+  quiche/quic/core/crypto/quic_crypto_proof.cc
+  quiche/quic/core/crypto/quic_crypto_server_config.cc
+  quiche/quic/core/crypto/quic_decrypter.cc
+  quiche/quic/core/crypto/quic_encrypter.cc
+  quiche/quic/core/crypto/quic_hkdf.cc
+  quiche/quic/core/crypto/tls_client_connection.cc
+  quiche/quic/core/crypto/tls_connection.cc
+  quiche/quic/core/crypto/tls_server_connection.cc
+  quiche/quic/core/crypto/transport_parameters.cc
+  quiche/quic/core/crypto/web_transport_fingerprint_proof_verifier.cc
+  quiche/quic/core/deterministic_connection_id_generator.cc
+  quiche/quic/core/frames/quic_ack_frame.cc
+  quiche/quic/core/frames/quic_ack_frequency_frame.cc
+  quiche/quic/core/frames/quic_blocked_frame.cc
+  quiche/quic/core/frames/quic_connection_close_frame.cc
+  quiche/quic/core/frames/quic_crypto_frame.cc
+  quiche/quic/core/frames/quic_frame.cc
+  quiche/quic/core/frames/quic_goaway_frame.cc
+  quiche/quic/core/frames/quic_handshake_done_frame.cc
+  quiche/quic/core/frames/quic_max_streams_frame.cc
+  quiche/quic/core/frames/quic_message_frame.cc
+  quiche/quic/core/frames/quic_new_connection_id_frame.cc
+  quiche/quic/core/frames/quic_new_token_frame.cc
+  quiche/quic/core/frames/quic_padding_frame.cc
+  quiche/quic/core/frames/quic_path_challenge_frame.cc
+  quiche/quic/core/frames/quic_path_response_frame.cc
+  quiche/quic/core/frames/quic_ping_frame.cc
+  quiche/quic/core/frames/quic_retire_connection_id_frame.cc
+  quiche/quic/core/frames/quic_rst_stream_frame.cc
+  quiche/quic/core/frames/quic_stop_sending_frame.cc
+  quiche/quic/core/frames/quic_stop_waiting_frame.cc
+  quiche/quic/core/frames/quic_stream_frame.cc
+  quiche/quic/core/frames/quic_streams_blocked_frame.cc
+  quiche/quic/core/frames/quic_window_update_frame.cc
+  quiche/quic/core/http/http_constants.cc
+  quiche/quic/core/http/http_decoder.cc
+  quiche/quic/core/http/http_encoder.cc
+  quiche/quic/core/http/quic_client_promised_info.cc
+  quiche/quic/core/http/quic_client_push_promise_index.cc
+  quiche/quic/core/http/quic_header_list.cc
+  quiche/quic/core/http/quic_headers_stream.cc
+  quiche/quic/core/http/quic_receive_control_stream.cc
+  quiche/quic/core/http/quic_send_control_stream.cc
+  quiche/quic/core/http/quic_server_initiated_spdy_stream.cc
+  quiche/quic/core/http/quic_server_session_base.cc
+  quiche/quic/core/http/quic_spdy_client_session.cc
+  quiche/quic/core/http/quic_spdy_client_session_base.cc
+  quiche/quic/core/http/quic_spdy_client_stream.cc
+  quiche/quic/core/http/quic_spdy_server_stream_base.cc
+  quiche/quic/core/http/quic_spdy_session.cc
+  quiche/quic/core/http/quic_spdy_stream.cc
+  quiche/quic/core/http/quic_spdy_stream_body_manager.cc
+  quiche/quic/core/http/spdy_server_push_utils.cc
+  quiche/quic/core/http/spdy_utils.cc
+  quiche/quic/core/http/web_transport_http3.cc
+  quiche/quic/core/http/web_transport_stream_adapter.cc
+  quiche/quic/core/legacy_quic_stream_id_manager.cc
+  quiche/quic/core/qpack/qpack_blocking_manager.cc
+  quiche/quic/core/qpack/qpack_decoded_headers_accumulator.cc
+  quiche/quic/core/qpack/qpack_decoder.cc
+  quiche/quic/core/qpack/qpack_decoder_stream_receiver.cc
+  quiche/quic/core/qpack/qpack_decoder_stream_sender.cc
+  quiche/quic/core/qpack/qpack_encoder.cc
+  quiche/quic/core/qpack/qpack_encoder_stream_receiver.cc
+  quiche/quic/core/qpack/qpack_encoder_stream_sender.cc
+  quiche/quic/core/qpack/qpack_header_table.cc
+  quiche/quic/core/qpack/qpack_index_conversions.cc
+  quiche/quic/core/qpack/qpack_instruction_decoder.cc
+  quiche/quic/core/qpack/qpack_instruction_encoder.cc
+  quiche/quic/core/qpack/qpack_instructions.cc
+  quiche/quic/core/qpack/qpack_progressive_decoder.cc
+  quiche/quic/core/qpack/qpack_receive_stream.cc
+  quiche/quic/core/qpack/qpack_required_insert_count.cc
+  quiche/quic/core/qpack/qpack_send_stream.cc
+  quiche/quic/core/qpack/qpack_static_table.cc
+  quiche/quic/core/qpack/value_splitting_header_list.cc
+  quiche/quic/core/quic_ack_listener_interface.cc
+  quiche/quic/core/quic_alarm.cc
+  quiche/quic/core/quic_bandwidth.cc
+  quiche/quic/core/quic_buffered_packet_store.cc
+  quiche/quic/core/quic_chaos_protector.cc
+  quiche/quic/core/quic_coalesced_packet.cc
+  quiche/quic/core/quic_config.cc
+  quiche/quic/core/quic_connection.cc
+  quiche/quic/core/quic_connection_context.cc
+  quiche/quic/core/quic_connection_id.cc
+  quiche/quic/core/quic_connection_id_manager.cc
+  quiche/quic/core/quic_connection_stats.cc
+  quiche/quic/core/quic_constants.cc
+  quiche/quic/core/quic_control_frame_manager.cc
+  quiche/quic/core/quic_crypto_client_handshaker.cc
+  quiche/quic/core/quic_crypto_client_stream.cc
+  quiche/quic/core/quic_crypto_handshaker.cc
+  quiche/quic/core/quic_crypto_server_stream.cc
+  quiche/quic/core/quic_crypto_server_stream_base.cc
+  quiche/quic/core/quic_crypto_stream.cc
+  quiche/quic/core/quic_data_reader.cc
+  quiche/quic/core/quic_data_writer.cc
+  quiche/quic/core/quic_datagram_queue.cc
+  quiche/quic/core/quic_default_clock.cc
+  quiche/quic/core/quic_dispatcher.cc
+  quiche/quic/core/quic_error_codes.cc
+  quiche/quic/core/quic_flow_controller.cc
+  quiche/quic/core/quic_framer.cc
+  quiche/quic/core/quic_idle_network_detector.cc
+  quiche/quic/core/quic_mtu_discovery.cc
+  quiche/quic/core/quic_network_blackhole_detector.cc
+  quiche/quic/core/quic_packet_creator.cc
+  quiche/quic/core/quic_packet_number.cc
+  quiche/quic/core/quic_packet_writer_wrapper.cc
+  quiche/quic/core/quic_packets.cc
+  quiche/quic/core/quic_path_validator.cc
+  quiche/quic/core/quic_ping_manager.cc
+  quiche/quic/core/quic_received_packet_manager.cc
+  quiche/quic/core/quic_sent_packet_manager.cc
+  quiche/quic/core/quic_server_id.cc
+  quiche/quic/core/quic_session.cc
+  quiche/quic/core/quic_socket_address_coder.cc
+  quiche/quic/core/quic_stream.cc
+  quiche/quic/core/quic_stream_id_manager.cc
+  quiche/quic/core/quic_stream_priority.cc
+  quiche/quic/core/quic_stream_send_buffer.cc
+  quiche/quic/core/quic_stream_sequencer.cc
+  quiche/quic/core/quic_stream_sequencer_buffer.cc
+  quiche/quic/core/quic_sustained_bandwidth_recorder.cc
+  quiche/quic/core/quic_tag.cc
+  quiche/quic/core/quic_time.cc
+  quiche/quic/core/quic_time_wait_list_manager.cc
+  quiche/quic/core/quic_trace_visitor.cc
+  quiche/quic/core/quic_transmission_info.cc
+  quiche/quic/core/quic_types.cc
+  quiche/quic/core/quic_unacked_packet_map.cc
+  quiche/quic/core/quic_utils.cc
+  quiche/quic/core/quic_version_manager.cc
+  quiche/quic/core/quic_versions.cc
+  quiche/quic/core/quic_write_blocked_list.cc
+  quiche/quic/core/tls_chlo_extractor.cc
+  quiche/quic/core/tls_client_handshaker.cc
+  quiche/quic/core/tls_handshaker.cc
+  quiche/quic/core/tls_server_handshaker.cc
+  quiche/quic/core/uber_quic_stream_id_manager.cc
+  quiche/quic/core/uber_received_packet_manager.cc
+  quiche/quic/platform/api/quic_socket_address.cc
+  quiche/spdy/core/array_output_buffer.cc
+  quiche/spdy/core/hpack/hpack_constants.cc
+  quiche/spdy/core/hpack/hpack_decoder_adapter.cc
+  quiche/spdy/core/hpack/hpack_encoder.cc
+  quiche/spdy/core/hpack/hpack_entry.cc
+  quiche/spdy/core/hpack/hpack_header_table.cc
+  quiche/spdy/core/hpack/hpack_output_stream.cc
+  quiche/spdy/core/hpack/hpack_static_table.cc
+  quiche/spdy/core/http2_frame_decoder_adapter.cc
+  quiche/spdy/core/http2_header_block.cc
+  quiche/spdy/core/http2_header_storage.cc
+  quiche/spdy/core/metadata_extension.cc
+  quiche/spdy/core/recording_headers_handler.cc
+  quiche/spdy/core/spdy_alt_svc_wire_format.cc
+  quiche/spdy/core/spdy_frame_builder.cc
+  quiche/spdy/core/spdy_framer.cc
+  quiche/spdy/core/spdy_no_op_visitor.cc
+  quiche/spdy/core/spdy_pinnable_buffer_piece.cc
+  quiche/spdy/core/spdy_prefixed_buffer_reader.cc
+  quiche/spdy/core/spdy_protocol.cc
+  quiche/spdy/core/spdy_simple_arena.cc
+)
+
+set(QUICHE_TOOL_SUPPORT_HEADERS
+  quiche/common/platform/api/quiche_command_line_flags.h
+  quiche/common/platform/api/quiche_default_proof_providers.h
+  quiche/common/platform/api/quiche_file_utils.h
+  quiche/common/platform/api/quiche_system_event_loop.h
+  quiche/quic/platform/api/quic_default_proof_providers.h
+  quiche/quic/tools/connect_server_backend.h
+  quiche/quic/tools/connect_tunnel.h
+  quiche/quic/tools/connect_udp_tunnel.h
+  quiche/quic/tools/fake_proof_verifier.h
+  quiche/quic/tools/quic_backend_response.h
+  quiche/quic/tools/quic_client_base.h
+  quiche/quic/tools/quic_memory_cache_backend.h
+  quiche/quic/tools/quic_name_lookup.h
+  quiche/quic/tools/quic_simple_client_session.h
+  quiche/quic/tools/quic_simple_client_stream.h
+  quiche/quic/tools/quic_simple_crypto_server_stream_helper.h
+  quiche/quic/tools/quic_simple_dispatcher.h
+  quiche/quic/tools/quic_simple_server_backend.h
+  quiche/quic/tools/quic_simple_server_session.h
+  quiche/quic/tools/quic_simple_server_stream.h
+  quiche/quic/tools/quic_spdy_client_base.h
+  quiche/quic/tools/quic_spdy_server_base.h
+  quiche/quic/tools/quic_tcp_like_trace_converter.h
+  quiche/quic/tools/quic_url.h
+  quiche/quic/tools/simple_ticket_crypter.h
+  quiche/quic/tools/web_transport_test_visitors.h
+)
+
+set(QUICHE_TOOL_SUPPORT_SRCS
+  quiche/common/platform/api/quiche_file_utils.cc
+  quiche/quic/tools/connect_server_backend.cc
+  quiche/quic/tools/connect_tunnel.cc
+  quiche/quic/tools/connect_udp_tunnel.cc
+  quiche/quic/tools/quic_backend_response.cc
+  quiche/quic/tools/quic_client_base.cc
+  quiche/quic/tools/quic_memory_cache_backend.cc
+  quiche/quic/tools/quic_name_lookup.cc
+  quiche/quic/tools/quic_simple_client_session.cc
+  quiche/quic/tools/quic_simple_client_stream.cc
+  quiche/quic/tools/quic_simple_crypto_server_stream_helper.cc
+  quiche/quic/tools/quic_simple_dispatcher.cc
+  quiche/quic/tools/quic_simple_server_session.cc
+  quiche/quic/tools/quic_simple_server_stream.cc
+  quiche/quic/tools/quic_spdy_client_base.cc
+  quiche/quic/tools/quic_tcp_like_trace_converter.cc
+  quiche/quic/tools/quic_url.cc
+  quiche/quic/tools/simple_ticket_crypter.cc
+)
+
+set(QUICHE_PLATFORM_DEFAULT_HEADERS
+  quiche/common/platform/default/quiche_platform_impl/quiche_bug_tracker_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_client_stats_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_containers_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_event_loop_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_export_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_flag_utils_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_flags_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_header_policy_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_iovec_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_logging_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_lower_case_string_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_mem_slice_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_mutex_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_prefetch_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_reference_counted_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_server_stats_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_stack_trace_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_testvalue_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_time_utils_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_udp_socket_platform_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_url_utils_impl.h
+)
+
+set(QUICHE_PLATFORM_DEFAULT_SRCS
+  quiche/common/platform/default/quiche_platform_impl/quiche_flags_impl.cc
+  quiche/common/platform/default/quiche_platform_impl/quiche_mutex_impl.cc
+  quiche/common/platform/default/quiche_platform_impl/quiche_stack_trace_impl.cc
+  quiche/common/platform/default/quiche_platform_impl/quiche_time_utils_impl.cc
+  quiche/common/platform/default/quiche_platform_impl/quiche_url_utils_impl.cc
+)
+
+set(QUICHE_PLATFORM_DEFAULT_TOOLS_HEADERS
+  quiche/common/platform/default/quiche_platform_impl/quiche_command_line_flags_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_default_proof_providers_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_file_utils_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_stream_buffer_allocator_impl.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_system_event_loop_impl.h
+)
+
+set(QUICHE_PLATFORM_DEFAULT_TOOLS_SRCS
+  quiche/common/platform/default/quiche_platform_impl/quiche_command_line_flags_impl.cc
+  quiche/common/platform/default/quiche_platform_impl/quiche_default_proof_providers_impl.cc
+  quiche/common/platform/default/quiche_platform_impl/quiche_file_utils_impl.cc
+)
+
+
+#
+set(IO_TOOL_SUPPORT_HEADERS
+  quiche/common/platform/api/quiche_event_loop.h
+  quiche/common/platform/api/quiche_udp_socket_platform_api.h
+  quiche/quic/core/io/event_loop_connecting_client_socket.h
+  quiche/quic/core/io/event_loop_socket_factory.h
+  quiche/quic/core/io/quic_default_event_loop.h
+  quiche/quic/core/io/quic_event_loop.h
+  quiche/quic/core/io/quic_poll_event_loop.h
+  quiche/quic/core/io/socket.h
+  quiche/quic/core/io/socket_internal.h
+  quiche/quic/core/quic_default_packet_writer.h
+  quiche/quic/core/quic_packet_reader.h
+  quiche/quic/core/quic_syscall_wrapper.h
+  quiche/quic/core/quic_udp_socket.h
+  quiche/quic/masque/masque_client.h
+  quiche/quic/masque/masque_client_session.h
+  quiche/quic/masque/masque_client_tools.h
+  quiche/quic/masque/masque_dispatcher.h
+  quiche/quic/masque/masque_encapsulated_client.h
+  quiche/quic/masque/masque_encapsulated_client_session.h
+  quiche/quic/masque/masque_server.h
+  quiche/quic/masque/masque_server_backend.h
+  quiche/quic/masque/masque_server_session.h
+  quiche/quic/masque/masque_utils.h
+  quiche/quic/platform/api/quic_udp_socket_platform_api.h
+  quiche/quic/tools/quic_client_default_network_helper.h
+  quiche/quic/tools/quic_client_factory.h
+  quiche/quic/tools/quic_default_client.h
+  quiche/quic/tools/quic_epoll_client_factory.h
+  quiche/quic/tools/quic_server.h
+)
+
+set(IO_TOOL_SUPPORT_SRCS
+  quiche/quic/core/io/event_loop_connecting_client_socket.cc
+  quiche/quic/core/io/event_loop_socket_factory.cc
+  quiche/quic/core/io/quic_default_event_loop.cc
+  quiche/quic/core/io/quic_poll_event_loop.cc
+  quiche/quic/core/io/socket.cc
+  quiche/quic/core/io/socket_posix.inc
+  quiche/quic/core/io/socket_win.inc
+  quiche/quic/core/quic_default_packet_writer.cc
+  quiche/quic/core/quic_packet_reader.cc
+  quiche/quic/core/quic_syscall_wrapper.cc
+  quiche/quic/core/quic_udp_socket.cc
+  quiche/quic/core/quic_udp_socket_posix.inc
+  quiche/quic/core/quic_udp_socket_win.inc
+  quiche/quic/masque/masque_client.cc
+  quiche/quic/masque/masque_client_session.cc
+  quiche/quic/masque/masque_client_tools.cc
+  quiche/quic/masque/masque_dispatcher.cc
+  quiche/quic/masque/masque_encapsulated_client.cc
+  quiche/quic/masque/masque_encapsulated_client_session.cc
+  quiche/quic/masque/masque_server.cc
+  quiche/quic/masque/masque_server_backend.cc
+  quiche/quic/masque/masque_server_session.cc
+  quiche/quic/masque/masque_utils.cc
+  quiche/quic/tools/quic_client_default_network_helper.cc
+  quiche/quic/tools/quic_default_client.cc
+  quiche/quic/tools/quic_epoll_client_factory.cc
+  quiche/quic/tools/quic_server.cc
+)
+
+#
+
+add_library(io_tool_support
+  ${IO_TOOL_SUPPORT_HEADERS}
+  ${IO_TOOL_SUPPORT_SRCS}
+)
+
+target_link_libraries(io_tool_support
+  PUBLIC
+  quiche_tool_support
+)
+#
+
+add_library(quiche_platform_default_tools
+  ${QUICHE_PLATFORM_DEFAULT_TOOLS_HEADERS}
+  ${QUICHE_PLATFORM_DEFAULT_TOOLS_SRCS}
+)
+
+target_link_libraries(quiche_platform_default_tools PUBLIC
+  quiche_core
+  absl::strings
+  absl::base
+  absl::flags
+  absl::utility
+)
+
+#
+
+add_library(quiche_platform_default
+  ${QUICHE_PLATFORM_DEFAULT_HEADERS}
+  ${QUICHE_PLATFORM_DEFAULT_SRCS}
+)
+
+#
+add_library(quiche_core 
+  ${QUICHE_CORE_HEADERS} ${QUICHE_CORE_SRCS}
+)
+
+target_link_libraries(quiche_core PUBLIC 
+  quiche_platform_default
+)
+
+#
+add_library(quiche_tool_support
+  ${QUICHE_TOOL_SUPPORT_HEADERS} ${QUICHE_TOOL_SUPPORT_SRCS}
+)
+
+target_link_libraries(quiche_tool_support PRIVATE 
+  quiche_platform_default_tools
+  quiche_core
+)
+
+#
+add_library(quic_toy_server 
+  quiche/quic/tools/quic_toy_server.h
+  quiche/quic/tools/quic_toy_server.cc
+)
+
+#
+
+add_library(quic_server_factory 
+  quiche/quic/tools/quic_server_factory.h
+  quiche/quic/tools/quic_server_factory.cc
+)
+
+
+
+#
+
+add_executable(quic_server
+  quiche/quic/tools/quic_server_bin.cc)
+
+
+target_link_libraries(quic_server 
+  PUBLIC 
+  quic_server_factory
+  quic_toy_server
+  quiche_core
+  quiche_tool_support
+  io_tool_support)

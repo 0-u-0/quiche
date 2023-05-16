@@ -2,3 +2,5 @@
 certificates
 build
 .cache
+third_party
+deps
