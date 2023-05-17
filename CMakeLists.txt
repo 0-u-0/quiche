@@ -14,7 +14,7 @@ add_subdirectory(third_party/abseil-cpp)
 
 find_package(Threads REQUIRED)
 find_package(OpenSSL CONFIG REQUIRED)
-find_package(Protobuf CONFIG REQUIRED)
+find_package(protobuf CONFIG REQUIRED)
 # find_package(absl CONFIG REQUIRED)
 
 
@@ -837,6 +837,8 @@ set(QUICHE_PLATFORM_DEFAULT_SRCS
   quiche/common/platform/default/quiche_platform_impl/quiche_url_utils_impl.cc
 )
 
+#---
+
 set(QUICHE_PLATFORM_DEFAULT_TOOLS_HEADERS
   quiche/common/platform/default/quiche_platform_impl/quiche_command_line_flags_impl.h
   quiche/common/platform/default/quiche_platform_impl/quiche_default_proof_providers_impl.h
@@ -955,6 +957,12 @@ target_link_libraries(io_tool_support PUBLIC
 
 add_library(quiche_platform_default
   ${QUICHE_PLATFORM_DEFAULT_HEADERS}
+  quiche/common/quiche_protocol_flags_list.h
+  quiche/quic/core/quic_flags_list.h
+  quiche/quic/core/quic_protocol_flags_list.h
+
+  quiche/common/platform/api/quiche_export.h
+  quiche/common/platform/default/quiche_platform_impl/quiche_export_impl.h
   ${QUICHE_PLATFORM_DEFAULT_SRCS}
 )
 
@@ -975,7 +983,8 @@ target_link_libraries(quiche_core PUBLIC
   cached_network_parameters_proto_lib
   crypto_server_config_proto_lib
   source_address_token_proto_lib
-
+  quic_trace_proto_lib
+  
   OpenSSL::Crypto OpenSSL::SSL
 
 )
