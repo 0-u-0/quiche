@@ -4541,6 +4541,7 @@ void QuicFramer::RemoveEncrypter(EncryptionLevel level) {
 
 void QuicFramer::SetInitialObfuscators(QuicConnectionId connection_id) {
   CrypterPair crypters;
+  QUIC_LOG(INFO) << "SetInitialObfuscators";
   CryptoUtils::CreateInitialObfuscators(perspective_, version_, connection_id,
                                         &crypters);
   encrypter_[ENCRYPTION_INITIAL] = std::move(crypters.encrypter);
@@ -4682,6 +4683,7 @@ bool QuicFramer::RemoveHeaderProtection(QuicDataReader* reader,
                                         QuicPacketHeader* header,
                                         uint64_t* full_packet_number,
                                         std::vector<char>* associated_data) {
+  QUIC_LOG(INFO) << "RemoveHeaderProtection";                                       
   EncryptionLevel expected_decryption_level = GetEncryptionLevel(*header);
   QuicDecrypter* decrypter = decrypter_[expected_decryption_level].get();
   if (decrypter == nullptr) {
@@ -4891,6 +4893,7 @@ bool QuicFramer::DecryptPayload(size_t udp_packet_length,
                                 char* decrypted_buffer, size_t buffer_length,
                                 size_t* decrypted_length,
                                 EncryptionLevel* decrypted_level) {
+  QUIC_LOG(INFO) << "DecryptPayload";
   if (!EncryptionLevelIsValid(decrypter_level_)) {
     QUIC_BUG(quic_bug_10850_67)
         << "Attempted to decrypt with bad decrypter_level_";

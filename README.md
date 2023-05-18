@@ -26,3 +26,18 @@ To contribute to QUICHE, follow instructions at
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
 QUICHE is only supported on little-endian platforms.
+
+##
+
+bazel build //quiche:quic_server
+
+bazel run :refresh_compile_commands
+##
+
+./bazel-bin/quiche/quic_server --port=4433 --certificate_file=certificates/quic-chain.pem --key_file=certificates/quic-leaf-cert.key --allow_unknown_root_cert --enable_webtransport --v=1
+
+
+./bazel-bin/quiche/quic_server --port=4433 --certificate_file=/root/quiche/certificates/certificate.pem --key_file=/root/quiche/certificates/certificate.key --enable_webtransport 
+
+##
+
